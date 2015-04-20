@@ -1,0 +1,34 @@
+{
+  "name": "PowerHouse",
+  "version": "0.1.0",
+  "description": "Because your app can be one!",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/master.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IngwiePhoenix/powerhouse"
+  },
+  "keywords": [
+    "cluster",
+    "fork",
+    "child_process",
+    "socket",
+    "sharing"
+  ],
+  "author": "Ingwie Phoenix",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/IngwiePhoenix/powerhouse/issues"
+  },
+  "homepage": "https://github.com/IngwiePhoenix/powerhouse",
+  "dependencies": {
+    "debug": "^2.1.3",
+    "yargs": "^3.7.2"
+  },
+  "directories": {
+    "test": "test"
+  },
+  "devDependencies": {}
+}
