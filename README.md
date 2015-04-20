@@ -70,6 +70,11 @@ if(house.isMaster) {
 }
 ```
 
+## Installation
+Your typical
+
+    npm install powerhouse
+
 ## API
 ### Configuration within `PowerHouse()` (or `PowerHouse.init()`)
 Many of the options are explaiend above already, but here is the entire and full list. The object is to be seen in two separate parts; the "initial" config that is anything but the `workers` property. And then the per-worker configuration.

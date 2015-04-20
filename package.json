@@ -1,5 +1,5 @@
 {
-  "name": "PowerHouse",
+  "name": "powerhouse",
   "version": "0.1.0",
   "description": "Because your app can be one!",
   "main": "index.js",
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/IngwiePhoenix/powerhouse"
+    "url": "https://github.com/IngwiePhoenix/PowerHouse"
   },
   "keywords": [
     "cluster",
@@ -20,9 +20,9 @@
   "author": "Ingwie Phoenix",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/IngwiePhoenix/powerhouse/issues"
+    "url": "https://github.com/IngwiePhoenix/PowerHouse/issues"
   },
-  "homepage": "https://github.com/IngwiePhoenix/powerhouse",
+  "homepage": "https://github.com/IngwiePhoenix/PowerHouse",
   "dependencies": {
     "debug": "^2.1.3",
     "yargs": "^3.7.2"
