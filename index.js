@@ -263,3 +263,27 @@ PowerHouse.prototype.server = function(netServer) {
     if(this.isMaster()) throw new Error("Only children should call this.");
     this._child_srv = netServer;
 }
+
+PowerHouse.prototype.get = function(id) {
+    return this.procs[id].config;
+}
+
+PowerHouse.prototype.set = function(id, config) {
+    // FIXME: This should shut down all workers from this id and re-fork.
+    this.procs[id].config = config;
+    return 0;
+}
+
+PowerHouse.prototype.reconfigure = function(config) {
+    // FIXME: Completely re-run PowerHouse.
+    // Shutdown all workers, re-run().
+    return 0;
+}
+
+PowerHouse.prototype.reload = function(id) {
+    if(typeof id != "undefined") {
+        // Relaunch all workers from this id
+    } else {
+        // Relaunch all workers
+    }
+}
