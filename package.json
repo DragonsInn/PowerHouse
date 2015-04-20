@@ -1,6 +1,6 @@
 {
   "name": "powerhouse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Because your app can be one!",
   "main": "index.js",
   "scripts": {
