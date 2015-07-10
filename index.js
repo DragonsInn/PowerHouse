@@ -171,7 +171,7 @@ function install_child_handlers(child, conf, index) {
         return onMessageHandler(self,msg,hd);
     });
     child.on("exit",function(code,signal){
-        debug("%s@%d exited (%d)", prefix, child.id || child.pid, code);
+        debug("%s@%d exited (%d, %s)", prefix, child.id || child.pid, code, conf.exec);
         if(conf.reloadable) {
             // Revive this worker process.
             // FIXME: Send "offline" status to still open socket(s).
@@ -219,10 +219,16 @@ PowerHouse.prototype.init = function(obj) {
         if(workerConf.type == "cluster") {
             debug("Using cluster.fork()'ed worker.");
             var o = require(resolve(workerConf.exec));
-            if("run" in o) o.run(workerConf);
+            if("run" in o) o.run(workerConf, this);
         } else {
             // If the parent had a run method, we could runt his...
             debug("Using child_process.fork()'ed worker.");
+            if("run" in module.parent) {
+                module.parent.run(
+                    JSON.parse(process.env["POWERHOUSE_CONFIG"]),
+                    this
+                );
+            }
         }
     }
 }
