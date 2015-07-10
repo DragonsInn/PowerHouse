@@ -5,7 +5,9 @@ var cluster = require("cluster"),
     cpus = require("os").cpus().length,
     ee = require("events"),
     path = require("path"),
-    fs = require("fs");
+    fs = require("fs"),
+    ginga = require("ginga"),
+    merge = require("merge");
 
 var debug = require("debug")("PowerHouse");
 
@@ -17,6 +19,17 @@ var PowerHouse = function PowerHouse(obj) {
     if(this instanceof PowerHouse) {
         ee.EventEmitter.call(this);
         this.procs = {};
+        ginga.define("shutdown", function(ctx, done){
+            process.exit(ctx.exitCode || 0);
+            done(); // Won't be reached anyway.
+        });
+        this.addShutdownHandler = function(cb) {
+            ginga.use("shutdown", cb);
+        }
+        this.doShutdownSequence = function(data) {
+            // There is no full use on this, yet. Will be extended another time.
+            return ginga.shutdown(data,function(err,res){});
+        }
         return this.init(obj);
     } else
         return new PowerHouse(obj);
@@ -45,7 +58,7 @@ workerDefaults = {
     type: "cluster",
     isServer: false,
     listenArgs: []
-}
+};
 
 // Utility
 function resolve(file) {
@@ -67,8 +80,9 @@ function make_worker(workerConf) {
             POWERHOUSE_CONFIG: JSON.stringify(workerConf)
         });
     } else if(workerConf.type == "child") {
-        var env = process.env;
-        env.POWERHOUSE_CONFIG = JSON.stringify(workerConf);
+        var env = merge(process.env, {
+            POWERHOUSE_CONFIG: JSON.stringify(workerConf)
+        });
         proc = child_process.fork(resolve(workerConf.exec), ["--PowerHouse"], {
             env: env
         });
@@ -112,7 +126,6 @@ function install_generic_handlers() {
     var self = this;
     // Emitting is a bit different now
     var _emit = this.emit;
-    var self = this;
     this.emit = function() {
         var args = Array.prototype.slice.call(arguments);
         if(process.send) {
@@ -130,6 +143,16 @@ function install_generic_handlers() {
     // Eventing across processes
     process.on("message", function(msg,hd){
         return onMessageHandler(self,msg,hd);
+    });
+    // Error and shutdowns
+    var evs = ["exit","SIGINT","SIGBRK"];
+    evs.forEach(function(v,i){
+        process.on(v, function(){
+            self.doShutdownSequence({
+                event: v,
+                args: arguments
+            });
+        });
     });
     // Avoid double calls
     this._isSetup=true;
@@ -212,15 +235,12 @@ PowerHouse.prototype.run = function() {
 
     for(var i in workers) {
         // Create defaults
-        var workerConf = workerDefaults;
-        for(var k in workers[i]) workerConf[k]=workers[i][k];
+        var workerConf = merge(workerDefaults, workers[i]);
         if(typeof workerConf.exec == "undefined") {
             throw new Error("Your worker config needs an exec property.");
         }
         var children=[];
-        if(typeof workerConf.amount == "undefined") {
-            workerConf.amount = initial.amount;
-        }
+        workerConf.amount = workerConf.amount || initial.amount;
 
         // Make N workers
         for(var c=0; c<workerConf.amount; c++) {
