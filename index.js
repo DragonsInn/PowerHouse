@@ -7,7 +7,8 @@ var cluster = require("cluster"),
     path = require("path"),
     fs = require("fs"),
     ginga = require("ginga"),
-    merge = require("merge");
+    merge = require("merge"),
+    async = require("async");
 
 var debug = require("debug")("PowerHouse");
 
@@ -19,17 +20,26 @@ var PowerHouse = function PowerHouse(obj) {
     if(this instanceof PowerHouse) {
         ee.EventEmitter.call(this);
         this.procs = {};
-        ginga.define("shutdown", function(ctx, done){
-            process.exit(ctx.exitCode || 0);
-            done(); // Won't be reached anyway.
+        ginga.define("shutdown", function(ctx, n){
+            var o = ctx.args[0];
+            ctx.event = o.event;
+            ctx.exitCode = 0;
+            ctx.arguments = o.args;
+            n();
+        }, function(ctx, done){
+            done(null, ctx);
         });
         this.addShutdownHandler = function(cb) {
             ginga.use("shutdown", cb);
         }
-        this.doShutdownSequence = function(data) {
+        this.doShutdownSequence = function(data, cb) {
+            cb = cb || function(err,res){
+                process.exit(0);
+            };
             // There is no full use on this, yet. Will be extended another time.
-            return ginga.shutdown(data,function(err,res){});
+            return ginga.shutdown(data,cb);
         }
+        this._sequenced = false;
         return this.init(obj);
     } else
         return new PowerHouse(obj);
@@ -42,6 +52,7 @@ exports = module.exports = PowerHouse;
 // Constants
 PowerHouse.WORKER = "cluster";
 PowerHouse.CHILD_PROCESS = "child";
+PowerHouse.KILL_SIGNAL = "SIGTERM";
 
 // Defaults
 var defaults = {
@@ -121,7 +132,7 @@ function onMessageHandler(self, message, handle){
 }
 
 PowerHouse.prototype._isSetup = false;
-function install_generic_handlers() {
+function install_generic_handlers(exit_cb) {
     if(this._isSetup) return;
     var self = this;
     // Emitting is a bit different now
@@ -145,13 +156,16 @@ function install_generic_handlers() {
         return onMessageHandler(self,msg,hd);
     });
     // Error and shutdowns
-    var evs = ["exit","SIGINT","SIGBRK"];
+    var evs = ["exit","SIGINT","SIGBRK","SIGTERM"];
     evs.forEach(function(v,i){
         process.on(v, function(){
-            self.doShutdownSequence({
-                event: v,
-                args: arguments
-            });
+            if(!self._sequenced) {
+                self.doShutdownSequence({
+                    event: v,
+                    args: arguments
+                }, exit_cb);
+                self._sequenced = true;
+            }
         });
     });
     // Avoid double calls
@@ -202,16 +216,18 @@ PowerHouse.isChild = PowerHouse.prototype.isChild = function() {
 PowerHouse.prototype.init = function(obj) {
     for(var k in obj) { opts[k]=obj[k]; }
 
-    // All can use this
-    install_generic_handlers.call(this);
 
     if(this.isMaster()) {
+        // All can use this
+        install_generic_handlers.bind(this)(opts.shutdown);
         // Master
         process.title = opts.title;
         var self = this;
         this.opts = opts;
         opts.master(opts, function(){ self.run.call(self); });
     } else {
+        // without finale cb
+        install_generic_handlers.call(this);
         // Child. Execute!
         var workerConf = JSON.parse(process.env.POWERHOUSE_CONFIG);
         process.title = workerConf.title;
@@ -259,6 +275,11 @@ PowerHouse.prototype.run = function() {
                 this.emit("worker.start", proc);
             }
 
+            // Make it exit friendly.
+            proc._exited = false;
+            proc._exitArgs = null;
+            proc._group = workerConf.title;
+
             children[c]=proc;
         }
 
@@ -278,10 +299,84 @@ PowerHouse.prototype.run = function() {
 
         this.procs[workerConf.title] = {
             children: children,
-            config  : workerConf,
+            config  : merge({}, workerConf),
             server  : server
         }
     }
+
+    // Shutdown handlers
+    var _shut = false;
+    this.addShutdownHandler(function(ctx, next){
+        if(_shut) return;
+        _shut = true;
+        // Merge all the children together.
+        var allChildren = [];
+        for(var id in this.procs) {
+            var p = this.procs[id];
+            p.children.forEach(function(c){
+                // Trigger shutdown and add to list.
+                c.on("exit", function(){
+                    c._exited = true;
+                    c._exitArgs = arguments;
+                }).kill(PowerHouse.KILL_SIGNAL);
+                allChildren.push(c);
+            });
+        }
+
+        // Make sure they all are gone.
+        var allDone = false;
+        async.whilst(
+            function() {
+                return !allDone;
+            },
+            function(proceed) {
+                var allTrue = [];
+                var newChildren = [];
+                allChildren.forEach(function(c, i, ref){
+                    if(!c._exited) {
+                        if(c.pid) {
+                            try {
+                                process.kill(c.pid, 0);
+                            } catch (e) {
+                                c._exited = true;
+                            }
+                        } else if(c.process && c.process.pid) {
+                            try {
+                                process.kill(c.process.pid, 0);
+                            } catch (e) {
+                                c._exited = true;
+                            }
+                        } else if(c.isDead) {
+                            c._exited = c.isDead();
+                        }
+                    }
+                    // Overwriting the other array
+                    if(!c._exited) {
+                        newChildren.push(c);
+                    }
+                    allTrue.push(c._exited);
+                });
+                if(allTrue.length > 0) {
+                    for(var i in allTrue) {
+                        if(!allTrue[i]) {
+                            allDone = false;
+                            break;
+                        }
+                    }
+                } else {
+                    // There are NO entries. It's safe to say...
+                    allDone = true;
+                }
+                allChildren = newChildren;
+                // async.nextTick does NOT do this...? I am really surprised.
+                // FIXME: ...an answer.
+                async.setImmediate(proceed);
+            },
+            function(err) {
+                next(err);
+            }
+        );
+    }.bind(this));
 }
 
 PowerHouse.prototype.server = function(netServer) {
