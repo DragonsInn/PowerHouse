@@ -41,6 +41,9 @@ var PowerHouse = function PowerHouse(obj) {
             // There is no full use on this, yet. Will be extended another time.
             return ginga.shutdown(data,cb);
         }
+        this.kill = function() {
+            process.kill(process.pid);
+        }
         this._sequenced = false;
         return this.init(obj);
     } else
@@ -54,7 +57,7 @@ exports = module.exports = PowerHouse;
 // Constants
 PowerHouse.WORKER = "cluster";
 PowerHouse.CHILD_PROCESS = "child";
-PowerHouse.KILL_SIGNAL = "SIGTERM";
+PowerHouse.KILL_SIGNAL = "SIGINT";
 
 // Defaults
 var defaults = {
@@ -227,7 +230,7 @@ PowerHouse.prototype.init = function(obj) {
         process.title = opts.title;
         var self = this;
         this.opts = opts;
-        opts.master(opts, function(){ self.run.call(self); });
+        opts.master(opts, function(){ self.run.call(self); }, self);
     } else {
         // without finale cb
         install_generic_handlers.call(this);
@@ -318,13 +321,17 @@ PowerHouse.prototype.run = function() {
     this.addShutdownHandler(function(ctx, next){
         if(_shut) return;
         _shut = true;
+        debug("Processing exit...");
         // Merge all the children together.
         var allChildren = [];
         for(var id in this.procs) {
             var p = this.procs[id];
             p.children.forEach(function(c){
                 // Trigger shutdown and add to list.
+                var pid = (c.pid || c.process.pid);
+                debug("Attempting to kill %s...", pid);
                 c.on("exit", function(){
+                    debug("Child@%s exited via .kill()", pid);
                     c._exited = true;
                     c._exitArgs = arguments;
                 }).kill(PowerHouse.KILL_SIGNAL);
@@ -333,57 +340,55 @@ PowerHouse.prototype.run = function() {
         }
 
         // Make sure they all are gone.
-        var allDone = false;
+        var allDone = false, list = {};
+        var report = function() {
+            debug("Still exiting... "+JSON.stringify(list));
+            setTimeout(report, 500);
+        }
+        setTimeout(report, 1000);
+
         async.whilst(
-            function() {
-                return !allDone;
-            },
+            function(){ return allDone != true; },
             function(proceed) {
-                var allTrue = [];
-                var newChildren = [];
+                var allTrue = [], newChildren = []; list = {};
                 allChildren.forEach(function(c, i, ref){
-                    if(!c._exited) {
-                        if(c.pid) {
-                            try {
-                                process.kill(c.pid, 0);
-                            } catch (e) {
-                                c._exited = true;
-                            }
-                        } else if(c.process && c.process.pid) {
-                            try {
-                                process.kill(c.process.pid, 0);
-                            } catch (e) {
-                                c._exited = true;
-                            }
-                        } else if(c.isDead) {
-                            c._exited = c.isDead();
+                    var c_pid = (c.pid || c.process.pid);
+                    if(typeof c.isDead == "function") {
+                        // Method 1: A worker process has .isDead().
+                        c._exited = c.isDead();
+                    } else if(typeof c._exited != "undefined") {
+                        // Method 2: Try to test-kill
+                        try {
+                            process.kill(c_pid, 0);
+                        } catch(e) {
+                            // Target does not exist.
+                            debug("Child %s was killed successfully", c_pid);
+                            c._exited = true;
                         }
                     }
                     // Overwriting the other array
-                    if(!c._exited) {
+                    if(c._exited == false) {
                         newChildren.push(c);
                     }
+                    list[c_pid] = [c._exited, c._group, c._exitCode];
                     allTrue.push(c._exited);
                 });
                 if(allTrue.length > 0) {
                     for(var i in allTrue) {
-                        if(!allTrue[i]) {
+                        if(allTrue[i] == false) {
                             allDone = false;
                             break;
                         }
                     }
                 } else {
                     // There are NO entries. It's safe to say...
+                    debug("Array of truth is empty. allDone!");
                     allDone = true;
                 }
                 allChildren = newChildren;
-                // async.nextTick does NOT do this...? I am really surprised.
-                // FIXME: ...an answer.
                 async.setImmediate(proceed);
             },
-            function(err) {
-                next(err);
-            }
+            function(err) { next(err); }
         );
     }.bind(this));
 }
