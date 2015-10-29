@@ -118,6 +118,9 @@ PowerHouse doesn't just configure workers and sit there happily, it returns an i
 * `PowerHouse.isMaster()`: Check if you are on the master process
 * `PowerHouse.isWorker()`: Check if you are on the worker.
 
+## Exiting
+If you want to exit from the master process and want to make sure that all your workers exit cleanly, then please use:
+- `PowerHouse.kill()`: Runs the shutdown handlers by SIGTERM'ing itself, then cleanly exits.
 
 ## Examples
 ### Basic example with 2 files, master.js and child.js
