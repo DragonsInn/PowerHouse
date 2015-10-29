@@ -8,7 +8,9 @@ var cluster = require("cluster"),
     fs = require("fs"),
     ginga = require("ginga"),
     merge = require("merge"),
-    async = require("async");
+    async = require("async"),
+    PrettyError = require("pretty-error"),
+    pe = new PrettyError();
 
 var debug = require("debug")("PowerHouse");
 
@@ -159,6 +161,7 @@ function install_generic_handlers(exit_cb) {
     var evs = ["exit","SIGINT","SIGBRK","SIGTERM"];
     evs.forEach(function(v,i){
         process.on(v, function(){
+            debug("Process:"+v+" - Executing middlewares...");
             if(!self._sequenced) {
                 self.doShutdownSequence({
                     event: v,
@@ -232,19 +235,24 @@ PowerHouse.prototype.init = function(obj) {
         var workerConf = JSON.parse(process.env.POWERHOUSE_CONFIG);
         process.title = workerConf.title;
         this.emit("worker.started");
-        if(workerConf.type == "cluster") {
-            debug("Using cluster.fork()'ed worker.");
-            var o = require(resolve(workerConf.exec));
-            if("run" in o) o.run(workerConf, this);
-        } else {
-            // If the parent had a run method, we could runt his...
-            debug("Using child_process.fork()'ed worker.");
-            if("run" in module.parent) {
-                module.parent.run(
-                    JSON.parse(process.env["POWERHOUSE_CONFIG"]),
-                    this
-                );
+        try {
+            if(workerConf.type == "cluster") {
+                debug("Using cluster.fork()'ed worker: "+workerConf.exec);
+                var o = require(resolve(workerConf.exec));
+                if("run" in o) o.run(workerConf, this);
+            } else {
+                // If the parent had a run method, we could runt his...
+                debug("Using child_process.fork()'ed worker: "+workerConf.exec);
+                var o = module.parent.exports;
+                if(typeof o.run == "function") {
+                    o.run(
+                        JSON.parse(process.env["POWERHOUSE_CONFIG"]),
+                        this
+                    );
+                }
             }
+        } catch(e) {
+            console.log(pe.render(e));
         }
     }
 }
@@ -261,6 +269,7 @@ PowerHouse.prototype.run = function() {
         if(typeof workerConf.exec == "undefined") {
             throw new Error("Your worker config needs an exec property.");
         }
+        debug("Launching: "+workerConf.exec);
         var children=[];
         workerConf.amount = workerConf.amount || initial.amount;
 
