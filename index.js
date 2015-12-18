@@ -237,6 +237,12 @@ PowerHouse.prototype.init = function(obj) {
         // Child. Execute!
         var workerConf = JSON.parse(process.env.POWERHOUSE_CONFIG);
         process.title = workerConf.title;
+        if(typeof workerConf.init != "undefined") {
+            var init = require(workerConf.init);
+            if(typeof init.run == "function") {
+                init.run(this, workerConf);
+            }
+        }
         this.emit("worker.started");
         try {
             if(workerConf.type == "cluster") {
@@ -275,6 +281,7 @@ PowerHouse.prototype.run = function() {
         debug("Launching: "+workerConf.exec);
         var children=[];
         workerConf.amount = workerConf.amount || initial.amount;
+        workerConf.init = initial.init;
 
         // Make N workers
         for(var c=0; c<workerConf.amount; c++) {
@@ -332,8 +339,6 @@ PowerHouse.prototype.run = function() {
                 debug("Attempting to kill %s...", pid);
                 c.on("exit", function(){
                     debug("Child@%s exited via .kill()", pid);
-                    c._exited = true;
-                    c._exitArgs = arguments;
                 }).kill(PowerHouse.KILL_SIGNAL);
                 allChildren.push(c);
             });
@@ -348,8 +353,8 @@ PowerHouse.prototype.run = function() {
         setTimeout(report, 1000);
 
         async.whilst(
-            function(){ return allDone != true; },
-            function(proceed) {
+            function Condition(){ return allDone != true; },
+            function Body(proceed) {
                 var allTrue = [], newChildren = []; list = {};
                 allChildren.forEach(function(c, i, ref){
                     var c_pid = (c.pid || c.process.pid);
@@ -386,9 +391,9 @@ PowerHouse.prototype.run = function() {
                     allDone = true;
                 }
                 allChildren = newChildren;
-                async.setImmediate(proceed);
+                setTimeout(proceed, 100);
             },
-            function(err) { next(err); }
+            function onError(err) { next(err); }
         );
     }.bind(this));
 }
