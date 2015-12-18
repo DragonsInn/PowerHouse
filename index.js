@@ -3,7 +3,7 @@ var cluster = require("cluster"),
     net = require("net"),
     util = require("util"),
     cpus = require("os").cpus().length,
-    ee = require("events"),
+    ee = require("events").EventEmitter,
     path = require("path"),
     fs = require("fs"),
     ginga = require("ginga"),
@@ -91,6 +91,7 @@ function resolve(file) {
 
 function make_worker(workerConf) {
     var proc;
+    var processScript = require.resolve("./process");
     if(workerConf.type == "cluster") {
         proc = cluster.fork({
             POWERHOUSE_CONFIG: JSON.stringify(workerConf)
@@ -99,7 +100,7 @@ function make_worker(workerConf) {
         var env = merge(process.env, {
             POWERHOUSE_CONFIG: JSON.stringify(workerConf)
         });
-        proc = child_process.fork(resolve(workerConf.exec), ["--PowerHouse"], {
+        proc = child_process.fork(processScript, ["--PowerHouse"], {
             env: env
         });
     }
@@ -222,7 +223,6 @@ PowerHouse.isChild = PowerHouse.prototype.isChild = function() {
 PowerHouse.prototype.init = function(obj) {
     for(var k in obj) { opts[k]=obj[k]; }
 
-
     if(this.isMaster()) {
         // All can use this
         install_generic_handlers.bind(this)(opts.shutdown);
@@ -234,34 +234,15 @@ PowerHouse.prototype.init = function(obj) {
     } else {
         // without finale cb
         install_generic_handlers.call(this);
-        // Child. Execute!
+
+        // Load the conf.
         var workerConf = JSON.parse(process.env.POWERHOUSE_CONFIG);
-        process.title = workerConf.title;
-        if(typeof workerConf.init != "undefined") {
-            var init = require(workerConf.init);
-            if(typeof init.run == "function") {
-                init.run(this, workerConf);
-            }
-        }
-        this.emit("worker.started");
-        try {
-            if(workerConf.type == "cluster") {
-                debug("Using cluster.fork()'ed worker: "+workerConf.exec);
-                var o = require(resolve(workerConf.exec));
-                if("run" in o) o.run(workerConf, this);
-            } else {
-                // If the parent had a run method, we could runt his...
-                debug("Using child_process.fork()'ed worker: "+workerConf.exec);
-                var o = module.parent.exports;
-                if(typeof o.run == "function") {
-                    o.run(
-                        JSON.parse(process.env["POWERHOUSE_CONFIG"]),
-                        this
-                    );
-                }
-            }
-        } catch(e) {
-            console.log(pe.render(e));
+        if(workerConf.type == "cluster") {
+            // A cluster module re-invokes the parent script.
+            // That means that the original PowerHouse call is re-called, too.
+            // A child_process.spawn'ed child however runs the process script
+            // directly, so there is no need to do that here.
+            require("./process");
         }
     }
 }
@@ -402,6 +383,7 @@ PowerHouse.prototype.server = function(netServer) {
     // From now on, PowerHouse::master.connection is handled here.
     if(this.isMaster()) throw new Error("Only children should call this.");
     this._child_srv = netServer;
+    this._child_srv.listen(-1);
 }
 
 PowerHouse.prototype.get = function(id) {

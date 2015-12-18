@@ -1,5 +1,7 @@
 var PowerHouse = require("../");
 
+var r = require.resolve;
+
 var house = PowerHouse({
     title: "o.o",
     amount: 1,
@@ -9,23 +11,23 @@ var house = PowerHouse({
     workers: [
         { // Cluster based process
             title: "o.o worker",
-            exec: "./worker.js",
+            exec: r("./worker.js"),
             reloadable: false
         },
         { // ChildProcess based process
             title: "o.o child",
             type: "child",
-            exec: "./child.js",
+            exec: r("./child.js"),
             reloadable: false
         },
-        {
+        /*{ // FIXME: Slave servers dont keep the event loop filled. Bug.
             title: "o.o net",
             type: "child",
-            exec: "./net_srv.js",
+            exec: r("./net_srv.js"),
             reloadable: true,
             isServer: true,
             listen: [9999]
-        }
+        }*/
     ]
 });
 
