@@ -3,7 +3,7 @@ process.title = workerConf.title;
 
 var PrettyError = require("pretty-error"),
     pe = new PrettyError(),
-    house = require("./index");
+    house = require("./index")();
 
 function loadAndRun(modulePath) {
     try {
